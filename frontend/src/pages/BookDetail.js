@@ -1,132 +1,101 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { CartContext } from '../context/CartContext';
-import { useNavigate } from 'react-router-dom';
-import './BookCard.css';
+import React, { useEffect, useState, useRef, useContext } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Review from '../components/Review';
+import axios from 'axios';
+import { FaArrowLeft } from 'react-icons/fa'; 
+import { CartContext } from '../context/CartContext';  
+import './BookDetail.css';
 
-export default function BookCard({ book }) {
-  const { addToCart } = useContext(CartContext);
-  const navigate = useNavigate();
+export default function BookDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate(); 
+  const [book, setBook] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const hasLoggedView = useRef(false);
+  const { addToCart } = useContext(CartContext); 
   const user = JSON.parse(localStorage.getItem('user'));
-  const email = localStorage.getItem('email');
-
-  const [isWishlisted, setIsWishlisted] = useState(false);
-
-  // Function to fix image URLs
-  const getImageUrl = (url) => {
-    if (!url || url.trim() === '') {
-      return '/images/default-book.jpg';
-    }
-    
-    // If it's already a full URL (http/https), return as-is
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url;
-    }
-    
-    // If it already starts with /images/, return as-is
-    if (url.startsWith('/images/')) {
-      return url;
-    }
-    
-    // If it starts with / but not /images/, check if it's a localhost path
-    if (url.startsWith('/') && !url.startsWith('/images/')) {
-      // This might be from localhost conversion, return as-is
-      return url;
-    }
-    
-    // If it's just a filename (UUID.png), add /images/ prefix
-    // Check if it looks like a UUID filename (with extension)
-    const uuidRegex = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(jpg|jpeg|png|gif|webp)$/i;
-    const simpleFilenameRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
-    
-    if (uuidRegex.test(url) || simpleFilenameRegex.test(url)) {
-      return `/images/${url}`;
-    }
-    
-    // Default fallback
-    return '/images/default-book.jpg';
-  };
 
   useEffect(() => {
-    const fetchWishlistStatus = async () => {
-      if (!email) return;
-      const res = await fetch(`/api/wishlist/${email}`);
-      if (res.ok) {
-        const data = await res.json();
-        setIsWishlisted(data.some(item => item.bookId === book.id));
+    async function fetchBook() {
+      try {
+        const res = await fetch(`/api/books/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setBook(data);
+        } else {
+          setBook(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch book', err);
       }
-    };
-    fetchWishlistStatus();
-  }, [book.id, email]);
-
-  const toggleWishlist = async () => {
-    if (!email) {
-      alert('Please log in to use the wishlist.');
-      return;
+      setLoading(false);
     }
+    fetchBook();
+  }, [id]);
 
-    if (isWishlisted) {
-      await fetch(`/api/wishlist/${email}/${book.id}`, {
-        method: 'DELETE'
-      });
-      setIsWishlisted(false);
-    } else {
-      const res = await fetch('/api/wishlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, bookId: book.id })
-      });
+  useEffect(() => {
+    const email = localStorage.getItem('email');
+    if (!email || !book || hasLoggedView.current) return;
 
-      if (res.ok) {
-        setIsWishlisted(true);
-      } else {
-        alert('Already in wishlist.');
-      }
-    }
-  };
+    axios.post('/api/RecentView', {
+      email,
+      bookId: book.id
+    }).catch(err => console.error('Failed to save recent view:', err));
+
+    hasLoggedView.current = true;
+  }, [book]);
 
   const handleAddToCart = () => {
     if (!user) {
       navigate('/login');
       return;
     }
-    addToCart(book);
+    addToCart(book); 
   };
 
+  if (loading) return <p>Loading book...</p>;
+  if (!book) return <p>Book not found.</p>;
+
   return (
-    <div className="book-card">
-      <div onClick={() => navigate(`/book/${book.id}`)} className='cur'>
+    <div className="book-detail-container">
+      <button className='back-button' onClick={() => navigate(-1)}>
+        <FaArrowLeft />
+        </button>
+
+      <h2 className="book-title">{book.title}</h2>
+      {book.coverImageUrl && (
         <img
-          src={getImageUrl(book.coverImageUrl)}
+          src={
+            book.coverImageUrl.startsWith('http')
+              ? book.coverImageUrl
+              : `/${book.coverImageUrl}`
+          }
           alt={book.title}
-          className="book-image"
-          onError={(e) => {
-            console.error('Failed to load image:', book.coverImageUrl);
-            e.target.onerror = null; // Prevent infinite loop
-            e.target.src = '/images/default-book.jpg';
-          }}
-          onLoad={(e) => {
-            console.log('Successfully loaded image:', book.coverImageUrl);
-          }}
         />
-        <h3>{book.title}</h3>
-        <h4>{book.author}</h4>
-        <p>₹{book.price}</p>
-        <p>In Stock: {book.quantity}</p>
+      )}
+      <p className='details'><strong>Author: </strong>{book.author || 'Unknown'}</p>
+      <p className='details'><strong>Price: </strong>₹{book.price}</p>
+      <p className='details'><strong>Description: </strong>{book.description}</p>
+      <p className='details'><strong>Category: </strong>{book.category}</p>
+
+      <div className='details'>
+        {book.category === 'Medical' && <p><strong>Subject: </strong>{book.subject}</p>}
+        {book.category === 'Fiction' && <p><strong>Genre: </strong>{book.genre}</p>}
+        {book.category === 'Educational' && <p><strong>Course: </strong>{book.course}</p>}
+        {book.category === 'Indian' && <p><strong>Language: </strong>{book.language}</p>}
       </div>
+      <p className='details'><strong>Stock: </strong>{book.quantity}</p>
+
       <button
-        onClick={() => {
-          toggleWishlist();
-        }}
-        className={`wishlist-icon ${isWishlisted ? 'selected' : ''}`}
-        title={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-      >
-        ♥
-      </button>
-      <button
+        className='addtocart'
         disabled={book.quantity === 0}
-        onClick={() => handleAddToCart(book.id)}>
+        onClick={handleAddToCart}
+        style={{ marginTop: '10px' }}
+      >
         {book.quantity === 0 ? 'Sold Out' : 'Add to Cart'}
       </button>
+
+      <Review bookId={book.id} />
     </div>
   );
 }
